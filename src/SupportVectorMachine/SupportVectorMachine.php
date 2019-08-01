@@ -74,14 +74,14 @@ class SupportVectorMachine
     private $probabilityEstimates;
 
     /**
-     * @var string
+     * @var ?string
      */
-    private $binPath;
+    private $binPath = null;
 
     /**
-     * @var string
+     * @var ?string
      */
-    private $varPath;
+    private $varPath = null;
 
     /**
      * @var string
@@ -119,28 +119,42 @@ class SupportVectorMachine
         $this->cacheSize = $cacheSize;
         $this->shrinking = $shrinking;
         $this->probabilityEstimates = $probabilityEstimates;
-
-        $rootPath = realpath(implode(DIRECTORY_SEPARATOR, [__DIR__, '..', '..'])).DIRECTORY_SEPARATOR;
-
-        $this->binPath = $rootPath.'bin'.DIRECTORY_SEPARATOR.'libsvm'.DIRECTORY_SEPARATOR;
-        $this->varPath = $rootPath.'var'.DIRECTORY_SEPARATOR;
     }
 
-    public function setBinPath(string $binPath): void
+    /**
+     * Sets a new bin path for the SVM model.
+     * If null is provided, the default bin path will be used.
+     *
+     * @param string|null $binPath
+     *
+     * @throws InvalidArgumentException
+     */
+    public function setBinPath(?string $binPath): void
     {
-        $this->ensureDirectorySeparator($binPath);
-        $this->verifyBinPath($binPath);
-
+        if ($binPath !== null) {
+            $this->ensureDirectorySeparator($binPath);
+            $this->verifyBinPath($binPath);
+        }
         $this->binPath = $binPath;
     }
 
-    public function setVarPath(string $varPath): void
+    /**
+     * Sets a new var path for the SVC model.
+     * If null is provided, the default var path will be used.
+     *
+     * @param string|null $varPath
+     *
+     * @throws InvalidArgumentException
+     */
+    public function setVarPath(?string $varPath): void
     {
-        if (!is_writable($varPath)) {
-            throw new InvalidArgumentException(sprintf('The specified path "%s" is not writable', $varPath));
-        }
+        if ($varPath !== null) {
+            if (!is_writable($varPath)) {
+                throw new InvalidArgumentException(sprintf('The specified path "%s" is not writable', $varPath));
+            }
 
-        $this->ensureDirectorySeparator($varPath);
+            $this->ensureDirectorySeparator($varPath);
+        }
         $this->varPath = $varPath;
     }
 
@@ -150,7 +164,7 @@ class SupportVectorMachine
         $this->targets = array_merge($this->targets, $targets);
 
         $trainingSet = DataTransformer::trainingSet($this->samples, $this->targets, in_array($this->type, [Type::EPSILON_SVR, Type::NU_SVR], true));
-        file_put_contents($trainingSetFileName = $this->varPath.uniqid('phpml', true), $trainingSet);
+        file_put_contents($trainingSetFileName = $this->getVarPath().uniqid('phpml', true), $trainingSet);
         $modelFileName = $trainingSetFileName.'-model';
 
         $command = $this->buildTrainCommand($trainingSetFileName, $modelFileName);
@@ -223,10 +237,29 @@ class SupportVectorMachine
         return $predictions;
     }
 
+    protected function getBinPath(): string
+    {
+        return is_string($this->binPath)
+            ? $this->binPath
+            : static::getRootPath().'bin'.DIRECTORY_SEPARATOR.'libsvm'.DIRECTORY_SEPARATOR;
+    }
+
+    protected function getVarPath(): string
+    {
+        return is_string($this->varPath)
+            ? $this->varPath
+            : static::getRootPath().'var'.DIRECTORY_SEPARATOR;
+    }
+
+    protected static function getRootPath(): string
+    {
+        return realpath(implode(DIRECTORY_SEPARATOR, [__DIR__, '..', '..'])).DIRECTORY_SEPARATOR;
+    }
+
     private function runSvmPredict(array $samples, bool $probabilityEstimates): string
     {
         $testSet = DataTransformer::testSet($samples);
-        file_put_contents($testSetFileName = $this->varPath.uniqid('phpml', true), $testSet);
+        file_put_contents($testSetFileName = $this->getVarPath().uniqid('phpml', true), $testSet);
         file_put_contents($modelFileName = $testSetFileName.'-model', $this->model);
         $outputFileName = $testSetFileName.'-output';
 
@@ -270,7 +303,7 @@ class SupportVectorMachine
     {
         return sprintf(
             '%ssvm-train%s -s %s -t %s -c %s -n %F -d %s%s -r %s -p %F -m %F -e %F -h %d -b %d %s %s',
-            $this->binPath,
+            $this->getBinPath(),
             $this->getOSExtension(),
             $this->type,
             $this->kernel,
@@ -297,7 +330,7 @@ class SupportVectorMachine
     ): string {
         return sprintf(
             '%ssvm-predict%s -b %d %s %s %s',
-            $this->binPath,
+            $this->getBinPath(),
             $this->getOSExtension(),
             $probabilityEstimates ? 1 : 0,
             escapeshellarg($testSetFileName),
